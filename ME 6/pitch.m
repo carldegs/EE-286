@@ -1,57 +1,33 @@
-[x_stereo, fs_audio] = audioread('ragtime.wav');
+% Pitch estimator
+function [t, pitchContour] = pitch(x, fs, hop_len, frame_len)
+    num_frames = ceil(numel(x)/(frame_len-hop_len));
+    pitchContour=zeros(1,num_frames);
+    for n = 1:num_frames
+        frame_start = 1+(n-1)*(frame_len-hop_len);
+        frame_end = frame_start + frame_len;
 
-% change to mono
-x_mono = (x_stereo(:,1) + x_stereo(:,2)) / 2;
+        if frame_end > length(x)
+            frame_end = length(x);
+        end
 
-% normalize
-mean_x_mono = mean(x_mono);
-x_norm = (x_mono - mean_x_mono) ./ max(abs(x_mono - mean_x_mono));
-
-% split into 30ms frames
-fs = fs_audio;
-frame_time = 0.03;
-frame_len = fs * frame_time;
-
-hop_size = 0.02;
-hop_len = fs * hop_size;
-
-num_frames = fix((length(x) - frame_len + hop_len) / hop_len);
-% number of frames = 208
-
-for n = 1:2
-    frame_start = ((n - 1) * hop_len) + 1;
-    frame_end = frame_start + frame_len - 1;
-    
-    if frame_end > length(x)
-        frame_end = length(x);
+        % curr frame
+        x_curr = x(frame_start:frame_end);
+        [X, lags] = xcorr(x_curr);
+        % remove negative lags
+        X(lags<0) = [];
+        % F0=pick the highest peak
+        [peaks,locs] = findpeaks(X, 'SortStr', 'desc');
+        if numel(locs) > 0
+            f0 = fs/locs(1);
+        else
+            f0 = 0;
+        end
+        fprintf('%d - %d %d: F0 = %.1f\n', n, frame_start, frame_end, f0);
+        pitchContour(n) = f0;
+        if (mod(n, 20) == 0) 
+            %figure; plot(1:numel(X), X, '-', locs, peaks, 'o');
+        end
     end
-    
-    % curr frame
-    x_curr = x_norm(frame_start:frame_end);
-    X = xcorr(x_curr);
-    
-    %fprintf('%d - %d %d\n', n, frame_start, frame_end);
+    t = linspace(0, numel(x)/fs, numel(pitchContour));
+
 end
-
-
-
-%%
-    % get current frame b(n)
-    b = x(frame_start:frame_end);
-    
-    % get autocorrelation of signal b(n), r(n)
-    r = xcorr(b);
-    % get only values of r from 0 < n < p
-    r_zero_point = ceil(length(r)/2);
-    r = r(r_zero_point:(r_zero_point + p));
-    
-    % solve for the LPC coefficients
-    R = toeplitz(r(1:p));
-    B_R = -r(2:p+1);
-    a = R\B_R;
-    
-    % get residual error
-    error_frame = filter(a,1,b);
-    
-    lpc_coeff(:,n) = a;
-    error(frame_start:frame_end) = error_frame;
